@@ -1,0 +1,12 @@
+{
+  "name": "medimind-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MediMind AI - health copilot",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

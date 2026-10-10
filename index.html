@@ -5,7 +5,7 @@
     <!-- Ensures proper scaling and disables zooming on inputs for a native app feel -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>MediMind AI - Complete Health Copilot</title>
-    
+
     <!-- Tailwind CSS for Universal Responsive Styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -44,21 +44,21 @@
     </script>
 
     <style>
-        body { 
-            font-family: 'Inter', system-ui, sans-serif; 
-            background-color: #f8fafc; 
-            color: #0f172a; 
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: #f8fafc;
+            color: #0f172a;
             /* Prevent pull-to-refresh on mobile for native feel */
-            overscroll-behavior-y: none; 
+            overscroll-behavior-y: none;
         }
         .fade-in { animation: fadeIn 0.3s ease-out forwards; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        
+
         /* Custom scrollbars for desktop */
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
-        
+
         /* Hide scrollbar completely for mobile horizontal navs */
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
@@ -71,15 +71,17 @@
         const { useState, useEffect, useRef, createContext, useContext } = React;
 
         // ============================================================================
-        // 🚀 HACKATHON EVALUATOR & UNIVERSAL DEPLOYMENT CONFIGURATION
+        // 🚀 UNIVERSAL DEPLOYMENT CONFIGURATION
         // ============================================================================
-        // 1. GEMINI_API_KEY: Add your key below to enable AI analysis and chatbot features.
+        // 1. GEMINI API KEY: NOT stored in this file anymore. It lives on the server as the
+        //    environment variable GEMINI_API_KEY (Vercel / Netlify / Render / Docker, etc.).
+        //    The app talks to the server route /api/gemini, which adds the key safely.
         // 2. CUSTOM_FIREBASE_CONFIG: Paste your Firebase config object to enable cloud storage.
-        //    *GRACEFUL FALLBACK*: If Firebase is null, the app automatically switches to 
+        //    (Firebase web configs are public by design; protect data with Firestore rules.)
+        //    *GRACEFUL FALLBACK*: If Firebase is null, the app automatically switches to
         //    a fully functional "Local Demo Mode" to ensure the UI never breaks.
         // ============================================================================
-        const GEMINI_API_KEY = ""; 
-        const CUSTOM_FIREBASE_CONFIG = null; 
+        const CUSTOM_FIREBASE_CONFIG = null;
         // ============================================================================
 
         const LanguageContext = createContext();
@@ -129,55 +131,35 @@
             return `\n\nCRITICAL PATIENT CONTEXT: Name: ${profile.name}, Age: ${profile.age}, Gender: ${profile.gender}, Height: ${profile.height}cm, Weight: ${profile.weight}kg, Allergies: ${profile.allergies || 'None'}, Past Operations: ${profile.operations || 'None'}, Blood Group: ${profile.bloodGroup || 'Unknown'}. Keep this specific patient's profile in mind for all your analysis and suggestions.`;
         };
 
-        const callGemini = async (prompt, systemInstruction = "You are a helpful medical assistant.") => {
-            const apiKey = GEMINI_API_KEY || (typeof __gemini_api_key !== 'undefined' ? __gemini_api_key : '');
-            if (!apiKey) return "<div class='bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 font-bold'>⚠️ System Notice: Gemini API Key is not configured. Please add your key to the deployment configuration block to enable AI features.</div>";
-            
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-            };
+        // ---------------------------------------------------------------------------
+        // AI calls go through the server route /api/gemini (the API key stays on the server).
+        // ---------------------------------------------------------------------------
+        const AI_ERROR_HTML = "<div class='bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 font-bold'>Error connecting to AI Server. Please try again in a moment.</div>";
+
+        const callBackend = async (body) => {
             try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`, {
+                const response = await fetch('/api/gemini', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(body)
                 });
                 const data = await response.json();
-                return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't process that.";
+                if (!response.ok) {
+                    console.error("AI Error:", data.error);
+                    return AI_ERROR_HTML;
+                }
+                return data.text || "Sorry, I couldn't process that.";
             } catch (e) {
-                console.error("AI Text Error:", e.message || e);
-                return "<div class='bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 font-bold'>Error connecting to AI Server. Please check your network or API Key.</div>";
+                console.error("AI Error:", e.message || e);
+                return AI_ERROR_HTML;
             }
         };
 
-        const callGeminiImage = async (prompt, base64Image, mimeType, systemInstruction = "You are a helpful medical assistant.") => {
-            const apiKey = GEMINI_API_KEY || (typeof __gemini_api_key !== 'undefined' ? __gemini_api_key : '');
-            if (!apiKey) return "<div class='bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 font-bold'>⚠️ System Notice: Gemini API Key is not configured. Please add your key to the deployment configuration block to enable AI features.</div>";
-            
-            const payload = {
-                contents: [{
-                    role: "user",
-                    parts: [
-                        { text: prompt },
-                        { inlineData: { mimeType: mimeType, data: base64Image } }
-                    ]
-                }],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-            };
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-                return data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't process the image.";
-            } catch (e) {
-                console.error("AI Image Error:", e.message || e);
-                return "<div class='bg-red-50 text-red-600 p-4 rounded-xl border border-red-200 font-bold'>Error connecting to AI Server. Please check your network or API Key.</div>";
-            }
-        };
+        const callGemini = (prompt, systemInstruction = "You are a helpful medical assistant.") =>
+            callBackend({ type: 'text', prompt, systemInstruction });
+
+        const callGeminiImage = (prompt, base64Image, mimeType, systemInstruction = "You are a helpful medical assistant.") =>
+            callBackend({ type: 'image', prompt, image: base64Image, mimeType, systemInstruction });
 
         const GlobalMedicineReminder = ({ db, user, appId }) => {
             const remindedMedsRef = useRef(new Set());
@@ -208,13 +190,13 @@
                 const timer = setInterval(() => {
                     const now = new Date();
                     const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-                    
+
                     meds.forEach(med => {
                         if (med.time === timeStr && med.status === 'pending') {
                             const remindKey = med.id + '-' + timeStr + '-' + now.toDateString();
                             if (!remindedMedsRef.current.has(remindKey)) {
                                 remindedMedsRef.current.add(remindKey);
-                                
+
                                 if ('Notification' in window && Notification.permission === 'granted') {
                                     try {
                                         new Notification("MediMind Alert", {
@@ -235,11 +217,11 @@
                             }
                         }
                     });
-                }, 10000); 
+                }, 10000);
                 return () => clearInterval(timer);
             }, [meds]);
 
-            return null; 
+            return null;
         };
 
         const App = () => {
@@ -251,7 +233,7 @@
             const [familyMember, setFamilyMember] = useState('Self');
             const [db, setDb] = useState(null);
             const [language, setLanguage] = useState('English');
-            
+
             const appId = typeof __app_id !== 'undefined' ? __app_id : 'medimind-universal-app';
 
             useEffect(() => {
@@ -260,7 +242,7 @@
                         await new Promise(r => setTimeout(r, 50));
                     }
                     const { initializeApp, getAuth, onAuthStateChanged, getFirestore, doc, getDoc } = window.firebaseModules;
-                    
+
                     try {
                         let firebaseConfig = CUSTOM_FIREBASE_CONFIG;
                         if (!firebaseConfig) {
@@ -269,7 +251,7 @@
                                 try { firebaseConfig = JSON.parse(envConfigStr); } catch (e) { console.warn("Env Config Parse Warn", e); }
                             }
                         }
-                        
+
                         if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
                             console.log("No Firebase Config detected. Running in Local Demo Mode.");
                             setAuthLoading(false);
@@ -281,13 +263,13 @@
                         const database = getFirestore(app);
                         setDb(database);
                         setAuthInstance(auth);
-                        
+
                         onAuthStateChanged(auth, async (u) => {
                             if (u) {
                                 const mockEmail = sessionStorage.getItem('mockEmail');
                                 const enhancedUser = { uid: u.uid, email: u.email || mockEmail };
                                 setUser(enhancedUser);
-                                
+
                                 try {
                                     const profileRef = doc(database, 'artifacts', appId, 'users', u.uid, 'profile', 'data');
                                     const snap = await getDoc(profileRef);
@@ -314,9 +296,9 @@
             }, []);
 
             if (authLoading) return <div className="h-[100dvh] flex items-center justify-center text-primary font-bold">Loading MediMind AI...</div>;
-            
+
             if (!user) return <LoginScreen auth={authInstance} setUser={setUser} setUserProfile={setUserProfile} />;
-            
+
             const isAdmin = user.email === 'admin@medimind.com';
             if (isAdmin) return <AdminApp user={user} auth={authInstance} />;
 
@@ -343,7 +325,7 @@
                 <LanguageContext.Provider value={{ language, setLanguage, t: translations[language] }}>
                 <div className="flex h-[100dvh] overflow-hidden bg-background">
                     <GlobalMedicineReminder db={db} user={user} appId={appId} />
-                    
+
                     {/* Desktop Sidebar */}
                     <aside className="hidden md:flex flex-col w-64 bg-surface border-r border-slate-200 shadow-sm z-10 overflow-y-auto custom-scrollbar">
                         <div className="p-6 flex items-center gap-3 sticky top-0 bg-surface border-b border-slate-100 z-10">
@@ -358,8 +340,8 @@
                                     key={tab.id}
                                     onClick={() => setCurrentTab(tab.id)}
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm ${
-                                        currentTab === tab.id 
-                                        ? 'bg-primary text-white shadow-md shadow-teal-100 font-semibold' 
+                                        currentTab === tab.id
+                                        ? 'bg-primary text-white shadow-md shadow-teal-100 font-semibold'
                                         : 'text-slate-600 hover:bg-teal-50 hover:text-primary font-medium'
                                     }`}
                                 >
@@ -448,7 +430,7 @@
 
                 setLoading(true);
                 const { createUserWithEmailAndPassword, signInWithEmailAndPassword, signInAnonymously } = window.firebaseModules;
-                
+
                 try {
                     if (isSignUp) {
                         await createUserWithEmailAndPassword(auth, email, password);
@@ -479,7 +461,7 @@
             const populateAdmin = (e) => {
                 e.preventDefault();
                 setEmail('admin@medimind.com');
-                setPassword(''); 
+                setPassword('');
                 setIsSignUp(false);
                 setErrorMsg('');
                 setTimeout(() => document.getElementById('pwdInput')?.focus(), 100);
@@ -493,33 +475,33 @@
                         </div>
                         <h1 className="text-3xl font-bold text-slate-800 mb-2">MediMind AI</h1>
                         <p className="text-slate-500 mb-8">{isSignUp ? 'Create your secure health account.' : 'Your Health, Organized.'}</p>
-                        
+
                         <form onSubmit={handleAuth} className="space-y-4 text-left">
-                            <input 
-                                type="email" 
+                            <input
+                                type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                placeholder="Email Address" 
+                                placeholder="Email Address"
                                 required
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" 
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
                             />
-                            <input 
+                            <input
                                 id="pwdInput"
-                                type="password" 
+                                type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                placeholder="Password" 
+                                placeholder="Password"
                                 required
-                                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" 
+                                className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
                             />
-                            
+
                             {errorMsg && <p className="text-red-500 text-sm font-medium">{errorMsg}</p>}
 
                             <button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primaryHover disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-md">
                                 {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
                             </button>
                         </form>
-                        
+
                         <div className="mt-6">
                             <button onClick={() => { setIsSignUp(!isSignUp); setErrorMsg(''); }} className="text-primary font-bold text-sm hover:underline">
                                 {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
@@ -529,7 +511,7 @@
                         <div className="mt-6 flex items-center gap-4">
                             <hr className="flex-1 border-slate-200" /><span className="text-sm text-slate-400">or</span><hr className="flex-1 border-slate-200" />
                         </div>
-                        
+
                         <button onClick={handleGoogleMock} className="mt-6 w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-3 rounded-xl transition-all flex justify-center items-center gap-2 shadow-sm">
                             Google Sign In (Demo)
                         </button>
@@ -546,7 +528,7 @@
 
         const OnboardingScreen = ({ db, user, appId, onComplete }) => {
             const [formData, setFormData] = useState({
-                name: '', age: '', gender: 'Prefer not to say', height: '', weight: '', 
+                name: '', age: '', gender: 'Prefer not to say', height: '', weight: '',
                 phone: '', operations: '', allergies: '', bloodGroup: ''
             });
             const [loading, setLoading] = useState(false);
@@ -555,14 +537,14 @@
 
             useEffect(() => {
                 if (!isTestAccount) return;
-                
+
                 const interval = setInterval(() => {
                     setTimeLeft(prev => prev > 0 ? prev - 1 : 0);
                 }, 1000);
 
                 const timer = setTimeout(() => {
                     onComplete({
-                        name: 'Guest Patient', age: '30', gender: 'Female', height: '165', weight: '65', 
+                        name: 'Guest Patient', age: '30', gender: 'Female', height: '165', weight: '65',
                         phone: '000-000-0000', operations: 'None', allergies: 'None', bloodGroup: 'O+'
                     });
                 }, 5000);
@@ -585,7 +567,7 @@
                     onComplete(formData);
                 } catch (err) {
                     console.error("Error saving profile:", err);
-                    onComplete(formData); 
+                    onComplete(formData);
                 }
                 setLoading(false);
             };
@@ -602,7 +584,7 @@
                         )}
                         <h2 className="text-3xl font-bold text-slate-800 mb-2 mt-6">Welcome to MediMind AI!</h2>
                         <p className="text-slate-500 mb-8">Before we start, let's set up your health profile so our AI can give you personalized and safe suggestions.</p>
-                        
+
                         <form onSubmit={handleSubmit} className="space-y-6">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div><label className="block text-sm font-bold text-slate-700 mb-1">Full Name *</label><input required name="name" value={formData.name} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary" /></div>
@@ -615,7 +597,7 @@
                             </div>
                             <div><label className="block text-sm font-bold text-slate-700 mb-1">Recent or Past Operations</label><textarea name="operations" placeholder="Include any surgeries you've had..." value={formData.operations} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary resize-none h-20" /></div>
                             <div><label className="block text-sm font-bold text-slate-700 mb-1">Allergies</label><textarea name="allergies" placeholder="Any food or medicine allergies?" value={formData.allergies} onChange={handleChange} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary resize-none h-20" /></div>
-                            
+
                             <button type="submit" disabled={loading} className="w-full bg-primary hover:bg-primaryHover disabled:opacity-50 text-white font-bold py-4 rounded-xl transition-all shadow-md">
                                 {loading ? 'Saving Profile...' : 'Save & Continue'}
                             </button>
@@ -677,17 +659,17 @@
                 }
                 const { collection, onSnapshot } = window.firebaseModules;
                 const recordsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'records');
-                
+
                 const unsubscribe = onSnapshot(recordsRef, (snapshot) => {
                     const loaded = [];
                     snapshot.forEach(doc => loaded.push({ id: doc.id, ...doc.data() }));
                     loaded.sort((a, b) => b.createdAt - a.createdAt);
-                    
+
                     if (loaded.length === 0) {
                         loaded.push({ id: 'mock1', title: "Blood Test Results", date: "Oct 12, 2026", type: "Lab Report" });
                         loaded.push({ id: 'mock2', title: "Dr. Sharma Prescription", date: "Sep 20, 2026", type: "Prescription" });
                     }
-                    
+
                     setRecords(loaded);
                     setLoading(false);
                 }, (err) => {
@@ -700,7 +682,7 @@
             const handleUpload = async (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
-                
+
                 let docType = "Document";
                 if (file.type.startsWith('image/')) docType = "Imaging / Scan";
                 else if (file.type === 'application/pdf') docType = "PDF Report";
@@ -780,20 +762,20 @@
                 if (!text && !image) return;
                 setLoading(true);
                 const userContext = buildProfileContext(userProfile);
-                
-                let prompt = `Analyze this medical lab report or document. The user's preferred language is ${language}. Reply in ${language}. 
+
+                let prompt = `Analyze this medical lab report or document. The user's preferred language is ${language}. Reply in ${language}.
                 Explain the findings clearly in simple terms. Highlight what is normal and abnormal. Provide the most likely conditions it points to based on the data.
                 Format the response in clean, beautiful HTML using Tailwind CSS classes. Do not use markdown backticks. Add a disclaimer to consult a doctor.`;
 
                 if (text) prompt += `\nAdditional text provided by user: ${text}`;
-                
+
                 let result;
                 if (image) {
                     result = await callGeminiImage(prompt, image, imageMime, "You are an advanced medical diagnostic AI." + userContext);
                 } else {
                     result = await callGemini(prompt, "You are an advanced medical diagnostic AI explaining reports." + userContext);
                 }
-                
+
                 result = result.replace(/```html|```/gi, '').trim();
                 setAnalysis(result);
                 setLoading(false);
@@ -806,8 +788,8 @@
 
                     <div className="flex flex-col md:flex-row gap-4 items-start">
                         <div className="flex-1 space-y-4 w-full">
-                            <textarea 
-                                value={text} 
+                            <textarea
+                                value={text}
                                 onChange={(e) => setText(e.target.value)}
                                 placeholder="Paste report text here (optional)..."
                                 className="w-full h-32 p-4 rounded-2xl border border-slate-200 outline-none focus:border-primary resize-none transition-colors"
@@ -815,15 +797,15 @@
                             <div className="flex flex-wrap gap-3">
                                 <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                                 <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleImageUpload} />
-                                
+
                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Upload /> Upload Image
                                 </button>
                                 <button onClick={() => cameraInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Camera /> Take Photo
                                 </button>
-                                <button 
-                                    onClick={handleAnalyze} 
+                                <button
+                                    onClick={handleAnalyze}
                                     disabled={loading || (!text && !image)}
                                     className="w-full md:w-auto flex-1 min-w-[140px] bg-primary disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition shadow-md hover:shadow-lg"
                                 >
@@ -831,7 +813,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         {previewUrl && (
                             <div className="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 bg-white p-1">
                                 <img src={previewUrl} alt="Document Preview" className="w-full h-full object-cover rounded-lg" />
@@ -880,7 +862,7 @@
                 if (!text && !image) return;
                 setLoading(true);
                 const userContext = buildProfileContext(userProfile);
-                
+
                 let prompt = `Analyze this doctor's prescription. The user's preferred language is ${language}. Reply in ${language}.
                 Please provide:
                 1. A clear list of all medicines prescribed, including dosage, frequency, and timing.
@@ -889,14 +871,14 @@
                 Format the response in clean, beautiful HTML using Tailwind CSS classes. Do not use markdown backticks. Add a disclaimer to consult a doctor.`;
 
                 if (text) prompt += `\nAdditional text provided by user: ${text}`;
-                
+
                 let result;
                 if (image) {
                     result = await callGeminiImage(prompt, image, imageMime, "You are an advanced medical diagnostic AI." + userContext);
                 } else {
                     result = await callGemini(prompt, "You are an advanced medical diagnostic AI explaining reports." + userContext);
                 }
-                
+
                 result = result.replace(/```html|```/gi, '').trim();
                 setAnalysis(result);
                 setLoading(false);
@@ -909,8 +891,8 @@
 
                     <div className="flex flex-col md:flex-row gap-4 items-start">
                         <div className="flex-1 space-y-4 w-full">
-                            <textarea 
-                                value={text} 
+                            <textarea
+                                value={text}
                                 onChange={(e) => setText(e.target.value)}
                                 placeholder="Paste prescription text here (optional)..."
                                 className="w-full h-32 p-4 rounded-2xl border border-slate-200 outline-none focus:border-primary resize-none transition-colors"
@@ -918,15 +900,15 @@
                             <div className="flex flex-wrap gap-3">
                                 <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                                 <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleImageUpload} />
-                                
+
                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Upload /> Upload Image
                                 </button>
                                 <button onClick={() => cameraInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Camera /> Take Photo
                                 </button>
-                                <button 
-                                    onClick={handleAnalyze} 
+                                <button
+                                    onClick={handleAnalyze}
                                     disabled={loading || (!text && !image)}
                                     className="w-full md:w-auto flex-1 min-w-[140px] bg-secondary disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition shadow-md hover:shadow-lg"
                                 >
@@ -934,7 +916,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         {previewUrl && (
                             <div className="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 bg-white p-1">
                                 <img src={previewUrl} alt="Document Preview" className="w-full h-full object-cover rounded-lg" />
@@ -982,7 +964,7 @@
                 if (!image) return;
                 setLoading(true);
                 const userContext = buildProfileContext(userProfile);
-                
+
                 let prompt = `Analyze this medicine pill, tablet, or medicine strip image. The user's preferred language is ${language}. Reply in ${language}.
                 Please provide:
                 1. The likely name and strength of the medicine shown in the image.
@@ -1007,15 +989,15 @@
                             <div className="flex flex-wrap gap-3">
                                 <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageUpload} />
                                 <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleImageUpload} />
-                                
+
                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Upload /> Upload Pill Image
                                 </button>
                                 <button onClick={() => cameraInputRef.current?.click()} className="flex-1 min-w-[140px] bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-4 rounded-xl transition flex items-center justify-center gap-2">
                                     <Icons.Camera /> Take Photo
                                 </button>
-                                <button 
-                                    onClick={handleAnalyzePill} 
+                                <button
+                                    onClick={handleAnalyzePill}
                                     disabled={loading || !image}
                                     className="w-full md:w-auto flex-1 min-w-[140px] bg-primary disabled:opacity-50 text-white font-bold py-3 px-4 rounded-xl transition shadow-md hover:shadow-lg"
                                 >
@@ -1023,7 +1005,7 @@
                                 </button>
                             </div>
                         </div>
-                        
+
                         {previewUrl && (
                             <div className="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 shadow-sm shrink-0 bg-white p-1">
                                 <img src={previewUrl} alt="Medicine Preview" className="w-full h-full object-cover rounded-lg" />
@@ -1058,7 +1040,7 @@
                             const lat = position.coords.latitude;
                             const lon = position.coords.longitude;
                             setLocationStatus(`Location detected (${lat.toFixed(2)}, ${lon.toFixed(2)}). Showing verified nearby hospitals:`);
-                            
+
                             setHospitals([
                                 {
                                     id: 1, name: "City General Hospital & Trauma Center", distance: "1.2 km away",
@@ -1131,7 +1113,7 @@
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90dvh] overflow-y-auto p-6 md:p-8 shadow-2xl space-y-6 fade-in relative custom-scrollbar">
                                 <button onClick={() => setSelectedHospital(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-2xl font-bold p-2">✕</button>
-                                
+
                                 <div className="flex items-center gap-3 pr-8">
                                     <div className="bg-teal-50 text-primary p-3 rounded-2xl shrink-0"><Icons.Hospital /></div>
                                     <div>
@@ -1184,26 +1166,26 @@
 
                 const userContext = buildProfileContext(userProfile);
                 const prompt = input;
-                const sysInstruction = `You are a friendly and advanced medical diagnostic AI. The user's preferred language is ${language}. You MUST reply in ${language}. 
+                const sysInstruction = `You are a friendly and advanced medical diagnostic AI. The user's preferred language is ${language}. You MUST reply in ${language}.
                 ${userContext}
-                
+
                 When the user describes symptoms, thoroughly analyze them. You MUST identify the most likely diseases or conditions from most to least likely. Format your response as valid HTML using Tailwind CSS classes. Do NOT wrap in markdown code blocks.
-                
+
                 <p class="text-xl text-slate-800 mb-4 font-bold">[List the most likely medical conditions or issue clearly here]</p>
-                
+
                 <div class="bg-amber-50 border-2 border-amber-200 p-5 rounded-2xl mb-4 text-amber-900 shadow-sm">
                     <h3 class="font-bold text-xl mb-2 flex items-center gap-2">🌿 Temporary Remedy</h3>
                     <p class="text-lg">[Short, easy advice on immediate relief or a home remedy they can do right now]</p>
                 </div>
-                
+
                 <div class="bg-blue-50 border-2 border-blue-200 p-5 rounded-2xl text-blue-900 shadow-sm">
                     <h3 class="font-bold text-xl mb-2 flex items-center gap-2">👨‍⚕️ What to do next?</h3>
                     <p class="text-lg">[Clearly tell them if the temporary remedy is enough, if symptoms will decrease, or exactly when they should go consult a doctor]</p>
                 </div>`;
-                
+
                 let reply = await callGemini(prompt, sysInstruction);
                 reply = reply.replace(/```html|```/gi, '').trim();
-                
+
                 setMessages([...newMessages, { role: 'bot', text: reply }]);
                 setLoading(false);
             };
@@ -1261,7 +1243,7 @@
                 }
                 const { collection, onSnapshot } = window.firebaseModules;
                 const medsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'medicines');
-                
+
                 const unsubscribe = onSnapshot(medsRef, (snapshot) => {
                     const loadedMeds = [];
                     snapshot.forEach((doc) => {
@@ -1299,12 +1281,12 @@
                     setErrorMsg("Please provide both a medicine name and time.");
                     return;
                 }
-                
-                const newEntry = { 
-                    name: newMedName.trim(), 
-                    time: newMedTime, 
-                    status: 'pending', 
-                    createdAt: Date.now() 
+
+                const newEntry = {
+                    name: newMedName.trim(),
+                    time: newMedTime,
+                    status: 'pending',
+                    createdAt: Date.now()
                 };
 
                 if (!db || !user || !appId) {
@@ -1313,7 +1295,7 @@
                     setNewMedTime('');
                     return;
                 }
-                
+
                 try {
                     const { collection, addDoc } = window.firebaseModules;
                     const medsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'medicines');
@@ -1343,7 +1325,7 @@
                     <div className="flex justify-between items-center">
                         <h2 className="text-2xl font-bold text-slate-800">{t.meds}</h2>
                     </div>
-                    
+
                     <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col gap-2 shadow-sm">
                         <div className="flex flex-col sm:flex-row gap-2">
                             <input value={newMedName} onChange={(e) => setNewMedName(e.target.value)} placeholder="Medicine Name (e.g. Paracetamol)" className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary" />
@@ -1352,7 +1334,7 @@
                         </div>
                         {errorMsg && <p className="text-red-500 text-sm font-medium px-1">{errorMsg}</p>}
                     </div>
-                    
+
                     <div className="space-y-3">
                         {loading && <div className="text-center p-4 text-slate-500">Loading medicines...</div>}
                         {!loading && meds.length === 0 && <div className="text-center p-10 bg-white border border-slate-200 rounded-3xl text-slate-500 shadow-sm">No medicines added yet.</div>}
@@ -1393,13 +1375,13 @@
             const generateChecklist = async () => {
                 if (!symptoms && !questions) return;
                 setLoading(true);
-                
+
                 const userContext = buildProfileContext(userProfile);
                 const prompt = `Create a short, professional checklist for a doctor's appointment based on symptoms: "${symptoms}" and user questions: "${questions}". The user's preferred language is ${language}. Reply in ${language}. Use simple HTML list tags (<ul><li class="mb-2">). Do not wrap in markdown code blocks.`;
-                
+
                 let result = await callGemini(prompt, "You are a helpful medical assistant." + userContext);
                 result = result.replace(/```html|```/gi, '').trim();
-                
+
                 setChecklist(result);
                 setLoading(false);
             };
@@ -1408,7 +1390,7 @@
                 <div className="space-y-6 fade-in h-full flex flex-col">
                     <h2 className="text-2xl font-bold text-slate-800">{t.prep}</h2>
                     <p className="text-slate-500">Build a checklist of questions and symptoms before your appointment.</p>
-                    
+
                     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
                         <div>
                             <label className="block text-sm font-bold text-slate-700 mb-2">What symptoms are you experiencing?</label>
@@ -1418,7 +1400,7 @@
                             <label className="block text-sm font-bold text-slate-700 mb-2">Any specific questions for the doctor?</label>
                             <input value={questions} onChange={(e) => setQuestions(e.target.value)} type="text" placeholder="e.g. Any dietary changes?" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-primary transition" />
                         </div>
-                        <button 
+                        <button
                             onClick={generateChecklist}
                             disabled={loading || (!symptoms && !questions)}
                             className="w-full bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white py-4 rounded-xl font-bold transition shadow-md"
@@ -1445,16 +1427,16 @@
             const [audioFile, setAudioFile] = useState(null);
             const [analysis, setAnalysis] = useState('');
             const [loading, setLoading] = useState(false);
-            
+
             const handleAnalyze = async () => {
                 if (!audioFile) return;
                 setLoading(true);
                 const mockTranscript = "Doctor says to take paracetamol twice a day after meals, rest for 3 days, and avoid cold water. Follow up next week.";
-                
+
                 const prompt = `Analyze this doctor's consultation transcript: "${mockTranscript}". Summarize the key findings, prescribed medicines, and next steps clearly using HTML tags.`;
                 let result = await callGemini(prompt, "You are a medical assistant extracting instructions from a transcript.");
                 result = result.replace(/```html|```/gi, '').trim();
-                
+
                 setAnalysis(result);
                 setLoading(false);
             };
@@ -1463,17 +1445,17 @@
                 <div className="space-y-6 fade-in h-full flex flex-col">
                     <h2 className="text-2xl font-bold text-slate-800">{t.record}</h2>
                     <p className="text-slate-500">Upload an audio or video recording of your doctor's visit to get an AI summary and instructions.</p>
-                    
+
                     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col items-center justify-center gap-4 py-12 text-center">
                         <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center shadow-inner mb-2">
                             <Icons.Mic />
                         </div>
                         <h3 className="font-bold text-slate-700 text-xl">{t.uploadAudio}</h3>
-                        
+
                         <input type="file" accept="audio/*,video/*" className="block w-full max-w-sm text-sm text-slate-500 file:mr-4 file:py-3 file:px-6 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-primary file:text-white hover:file:bg-primaryHover cursor-pointer" onChange={(e) => setAudioFile(e.target.files[0])} />
-                        
+
                         {audioFile && <p className="text-green-600 font-medium text-sm mt-2 flex items-center gap-2"><Icons.Activity /> File ready: {audioFile.name}</p>}
-                        
+
                         <button onClick={handleAnalyze} disabled={!audioFile || loading} className="mt-4 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white px-8 py-3 rounded-xl font-bold transition shadow-md w-full max-w-sm">
                             {loading ? 'Analyzing...' : 'Analyze Transcript with AI Buddy'}
                         </button>
@@ -1509,7 +1491,7 @@
                 }
                 const { collection, onSnapshot } = window.firebaseModules;
                 const apptRef = collection(db, 'artifacts', appId, 'users', user.uid, 'appointments');
-                
+
                 const unsubscribe = onSnapshot(apptRef, (snapshot) => {
                     const loaded = [];
                     snapshot.forEach(doc => loaded.push({ id: doc.id, ...doc.data() }));
@@ -1529,7 +1511,7 @@
                     setErrorMsg("Please provide Doctor Name, Date, and Time.");
                     return;
                 }
-                
+
                 const newAppt = {
                     doctor: docName.trim(),
                     specialty: specialty.trim() || "General Consultation",
@@ -1543,7 +1525,7 @@
                     setDocName(''); setSpecialty(''); setApptDate(''); setApptTime('');
                     return;
                 }
-                
+
                 try {
                     const { collection, addDoc } = window.firebaseModules;
                     const apptRef = collection(db, 'artifacts', appId, 'users', user.uid, 'appointments');
@@ -1580,7 +1562,7 @@
                     <div className="flex justify-between items-center">
                         <h2 className="text-2xl font-bold text-slate-800">{t.appts}</h2>
                     </div>
-                    
+
                     <div className="bg-white p-5 rounded-3xl border border-slate-200 space-y-3 shadow-sm">
                         <h3 className="font-bold text-slate-700">Schedule New Appointment</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1647,7 +1629,7 @@
         const WellnessTracker = () => (
             <div className="space-y-6 fade-in">
                 <h2 className="text-2xl font-bold text-slate-800">Wellness Tracker</h2>
-                
+
                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                     <h3 className="font-bold text-slate-700 mb-4">Sleep (Last 7 Days)</h3>
                     <div className="flex items-end justify-between h-32 gap-2">
@@ -1678,7 +1660,7 @@
         const Settings = ({ user, userProfile }) => {
             const { language, setLanguage, t } = useContext(LanguageContext);
             const [showPrivacy, setShowPrivacy] = useState(false);
-            
+
             const getDeviceName = () => {
                 const ua = navigator.userAgent;
                 if(ua.includes("Windows")) return "Windows PC";
@@ -1688,11 +1670,11 @@
                 if(ua.includes("iPhone") || ua.includes("iPad")) return "iOS Device";
                 return "Unknown Device";
             };
-            
+
             return (
             <div className="space-y-6 fade-in">
                 <h2 className="text-2xl font-bold text-slate-800">{t.settings}</h2>
-                
+
                 <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden divide-y divide-slate-100 shadow-sm">
                     {userProfile && (
                         <div className="p-5 flex flex-col gap-1">
@@ -1731,7 +1713,7 @@
                         <div className="bg-white rounded-3xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-6 shadow-2xl space-y-6 fade-in relative custom-scrollbar">
                             <button onClick={() => setShowPrivacy(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-2xl font-bold p-2">✕</button>
                             <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2 pr-8"><Icons.Settings /> Privacy & Security</h3>
-                            
+
                             <div>
                                 <h4 className="font-bold text-slate-700 mb-2">Device Login History</h4>
                                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
@@ -1776,7 +1758,7 @@
 
         const AdminApp = ({ user, auth }) => {
             const [currentTab, setCurrentTab] = useState('overview');
-            
+
             const handleSignOut = async () => {
                 try {
                     if(window.firebaseModules?.signOut) {
@@ -1814,7 +1796,7 @@
                             <button onClick={handleSignOut} className="w-full text-left px-4 py-2 text-red-400 hover:text-red-300 font-bold text-sm">Sign Out Admin</button>
                         </div>
                     </aside>
-                    
+
                     {/* Admin Main View */}
                     <main className="flex-1 p-4 md:p-8 overflow-y-auto custom-scrollbar pb-20 md:pb-8">
                         <header className="mb-8 flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -1826,7 +1808,7 @@
                                 <span className="w-2 h-2 rounded-full bg-green-500"></span> System Online
                             </div>
                         </header>
-                        
+
                         {currentTab === 'overview' && (
                             <div className="space-y-6 fade-in">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
