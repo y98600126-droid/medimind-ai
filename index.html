@@ -32,13 +32,13 @@
     <!-- Firebase SDK Modules -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword,setPersistence,browserSessionPersistence } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
         import { getFirestore, collection, onSnapshot, doc, setDoc, addDoc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
         // Expose Firebase globally so React can safely consume it
         window.firebaseModules = {
             initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signOut,
-            createUserWithEmailAndPassword, signInWithEmailAndPassword,
+            createUserWithEmailAndPassword, signInWithEmailAndPassword,setPersistence, browserSessionPersistence,
             getFirestore, collection, onSnapshot, doc, setDoc, addDoc, deleteDoc, updateDoc, getDoc
         };
     </script>
@@ -278,6 +278,7 @@
 
                         const app = initializeApp(firebaseConfig);
                         const auth = getAuth(app);
+                        try { await window.firebaseModules.setPersistence(auth, window.firebaseModules.browserSessionPersistence); } catch (e) { console.warn('Persistence warn', e); }
                         const database = getFirestore(app);
                         setDb(database);
                         setAuthInstance(auth);
